@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyHub - Focused Learning Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Anime.js CDN for animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+    <link rel="icon" type="image/png" href="assets/S.png" sizes="32x32">
+    <!-- Custom Tailwind Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#FFB6C1',
+                        'secondary': '#FFDAB9',
+                        'background-from': '#FFF5E1',
+                        'background-to': '#FFE4E1',
+                        'text-dark': '#4A4A4A',
+                        'card-bg': 'rgba(255, 255, 255, 0.6)',
+                        'border-soft': '#FFC0CB',
+                        'hover-accent': '#FF69B4',
+                    },
+                    fontFamily: {
+                        'sans': ['"Poppins"', 'sans-serif'],
+                    },
+                },
+            },
+        };
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-background-from to-background-to min-h-screen font-sans text-text-dark overflow-x-hidden">
+
+<!-- CONFIG SECTION -->
+<script>
+    const API_KEY = 'AIzaSyAk-qmn9POGiOU8bzqSOy-q4csPetAFt34'; // ← your key
+    const CHANNEL_IDS = [
+        'UCcMU5NE1Lmf4Fqpx7n9F3Sw', // JEE NEXUS
+    ];
+    const VIDEOS_PER_PAGE = 30;     // ← quota-friendly value
+</script>
+
+<!-- STYLES SECTION -->
+<style>
+    .glass-card {
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 192, 203, 0.3);
+        border-radius: 20px;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    }
+    .video-card:hover {
+        transform: translateY(-5px);
+        transition: transform 0.3s ease;
+        border-color: #FF69B4;
+    }
+    #videoModal { transition: opacity 0.3s ease; }
+    #backgroundCanvas {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; opacity: 0.08;
+    }
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #FFE4E1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb { background: #FFB6C1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #FF69B4; }
+    @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-slide { animation: fadeSlideIn 0.5s ease-out forwards; }
+    button { transition: all 0.2s ease; }
+    button:hover { transform: scale(1.05); }
+    .ad-placeholder {
+        background: linear-gradient(135deg, #FFDAB9, #FFB6C1);
+        border-radius: 15px; padding: 20px; text-align: center; font-weight: 600; color: #4A4A4A;
+    }
+    .fav-count { font-size: 0.8rem; background: #FF69B4; color: white; border-radius: 999px; padding: 2px 8px; margin-left: 6px; }
+    /* Sidebar toggle animation */
+    .sidebar-hidden { transform: translateX(-100%); opacity: 0; }
+    .sidebar-visible { transform: translateX(0); opacity: 1; }
+    /* Timer styles */
+    #studyTimer { background: rgba(255, 255, 255, 0.8); border-radius: 12px; padding: 1rem; }
+    #timerDisplay { font-size: 1.5rem; font-weight: bold; }
+</style>
+
+<!-- HEADER -->
+<header class="py-4 px-4 md:py-6 md:px-8 flex flex-wrap justify-between items-center border-b border-border-soft bg-card-bg glass-card gap-4">
+    <h1 class="text-2xl md:text-3xl font-bold text-primary">StudyHub</h1>
+    <div class="flex items-center space-x-2 md:space-x-4 flex-wrap gap-2" id="headerControls">
+        <label for="channelSelector" class="text-base md:text-lg">Channel:</label>
+        <select id="channelSelector" class="p-2 rounded-lg border border-border-soft bg-white focus:outline-none focus:ring-2 focus:ring-hover-accent">
+            <option value="">Select...</option>
+        </select>
+        <button id="loadChannel" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-hover-accent">Load</button>
+        <button id="toggleSidebar" class="bg-secondary text-text-dark px-4 py-2 rounded-lg hover:bg-hover-accent md:hidden">Playlists</button>
+    </div>
+    <!-- Study Timer -->
+    <div id="studyTimer" class="glass-card w-full md:w-auto flex flex-col md:flex-row items-center gap-2">
+        <div id="timerDisplay" class="text-primary">00:00:00</div>
+        <input id="timerInput" type="text" placeholder="HH:MM:SS (max 24:00:00)" class="p-1 rounded border border-border-soft w-32">
+        <button id="startTimer" class="bg-primary text-white px-2 py-1 rounded">Start</button>
+        <button id="pauseTimer" class="bg-secondary text-text-dark px-2 py-1 rounded">Pause</button>
+        <button id="resetTimer" class="bg-hover-accent text-white px-2 py-1 rounded">Reset</button>
+    </div>
+</header>
+
+<!-- MAIN -->
+<main class="container mx-auto py-4 px-4 md:py-8 flex flex-col md:flex-row gap-4 md:gap-6">
+    <!-- Sidebar – Playlists (collapsible) -->
+    <aside id="playlistSidebar" class="w-full md:w-1/4 bg-card-bg glass-card p-4 md:p-6 rounded-2xl hidden md:block sidebar-visible transition-all duration-300 ease-in-out fixed md:static top-0 left-0 h-full md:h-auto z-20 overflow-y-auto">
+        <button id="closeSidebar" class="md:hidden absolute top-4 right-4 text-2xl">&times;</button>
+        <h2 class="text-xl md:text-2xl font-semibold mb-4">Playlists</h2>
+        <ul id="playlistList" class="space-y-3"></ul>
+        <button id="loadAllVideos" class="w-full bg-secondary text-text-dark px-4 py-2 rounded-lg hover:bg-hover-accent mt-6">All Videos</button>
+    </aside>
+
+    <!-- Video Grid Area -->
+    <section class="w-full">
+        <div id="searchSortControls" class="flex flex-wrap gap-4 mb-6 hidden">
+            <input type="text" id="videoSearch" placeholder="Search in loaded videos..." class="flex-1 p-2 rounded-lg border border-border-soft min-w-[200px]">
+            <select id="sortSelector" class="p-2 rounded-lg border border-border-soft">
+                <option value="date">Newest first</option>
+                <option value="title">Title A–Z</option>
+            </select>
+        </div>
+        <div id="videoGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6"></div>
+        <button id="loadMore" class="bg-primary text-white px-6 md:px-8 py-3 rounded-xl mx-auto block mt-8 md:mt-10 hover:bg-hover-accent hidden">Load More</button>
+    </section>
+</main>
+
+<!-- Video Modal -->
+<div id="videoModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 hidden">
+    <div class="bg-white p-4 md:p-5 rounded-2xl w-11/12 max-w-4xl relative glass-card">
+        <button id="closeModal" class="absolute top-3 right-4 text-3xl font-bold text-gray-600 hover:text-black">&times;</button>
+        <h3 id="modalTitle" class="text-xl md:text-2xl font-bold mb-1"></h3>
+        <p id="modalChannel" class="text-gray-600 mb-4"></p>
+        <iframe id="videoPlayer" width="100%" height="300" md:height="450" frameborder="0" allowfullscreen allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"></iframe>
+        <a id="watchOnYT" href="#" target="_blank" class="block mt-4 text-primary hover:underline font-medium">→ Watch on YouTube</a>
+        <button id="togglePlaylistEmbed" class="bg-secondary text-text-dark px-4 md:px-5 py-2 rounded-lg mt-4 hover:bg-hover-accent hidden">Switch to Playlist</button>
+    </div>
+</div>
+
+<!-- ADS (placeholders) -->
+<div class="ad-placeholder mx-auto max-w-5xl my-6">Banner Ad Space – Top</div>
+<div class="ad-placeholder mx-auto max-w-5xl my-10">Horizontal Banner – Bottom</div>
+
+<!-- FOOTER / LEGAL -->
+<footer class="py-6 px-8 bg-card-bg glass-card mt-10 text-center border-t border-border-soft">
+    <p class="text-sm">Videos embedded from YouTube. All rights belong to their respective creators.<br>This site is not affiliated with YouTube or Google.</p>
+    <p class="text-xs mt-3 opacity-80">© 2025–2026 StudyHub</p>
+</footer>
+
+<!-- JAVASCRIPT -->
+<script>
+// ────────────────────────────────────────────────
+// FAVORITES
+// ────────────────────────────────────────────────
+let favorites = [];
+try {
+    const saved = localStorage.getItem('studyhub-favorites-2025');
+    if (saved) favorites = JSON.parse(saved) || [];
+} catch(e) {
+    console.warn("Favorites load error", e);
+    favorites = [];
+}
+
+// ────────────────────────────────────────────────
+// GLOBAL STATE
+// ────────────────────────────────────────────────
+let currentChannelId = '';
+let uploadsPlaylistId = '';
+let currentPlaylistId = '';
+let nextPageToken = '';
+let videos = [];
+let isPlaylistEmbed = false;
+let timerInterval = null;
+let remainingTime = 0;
+
+// DOM
+const channelSelector     = document.getElementById('channelSelector');
+const loadChannelBtn      = document.getElementById('loadChannel');
+const playlistSidebar     = document.getElementById('playlistSidebar');
+const playlistList        = document.getElementById('playlistList');
+const loadAllVideosBtn    = document.getElementById('loadAllVideos');
+const videoGrid           = document.getElementById('videoGrid');
+const loadMoreBtn         = document.getElementById('loadMore');
+const videoModal          = document.getElementById('videoModal');
+const modalTitle          = document.getElementById('modalTitle');
+const modalChannel        = document.getElementById('modalChannel');
+const videoPlayer         = document.getElementById('videoPlayer');
+const watchOnYT           = document.getElementById('watchOnYT');
+const closeModal          = document.getElementById('closeModal');
+const togglePlaylistEmbed = document.getElementById('togglePlaylistEmbed');
+const searchSortControls  = document.getElementById('searchSortControls');
+const videoSearch         = document.getElementById('videoSearch');
+const sortSelector        = document.getElementById('sortSelector');
+const toggleSidebarBtn    = document.getElementById('toggleSidebar');
+const closeSidebarBtn     = document.getElementById('closeSidebar');
+const timerDisplay        = document.getElementById('timerDisplay');
+const timerInput          = document.getElementById('timerInput');
+const startTimerBtn       = document.getElementById('startTimer');
+const pauseTimerBtn       = document.getElementById('pauseTimer');
+const resetTimerBtn       = document.getElementById('resetTimer');
+
+// ────────────────────────────────────────────────
+// SIDEBAR TOGGLE
+// ────────────────────────────────────────────────
+toggleSidebarBtn.onclick = () => {
+    playlistSidebar.classList.remove('hidden');
+    anime({
+        targets: playlistSidebar,
+        translateX: ['-100%', 0],
+        opacity: [0, 1],
+        duration: 300,
+        easing: 'easeInOutQuad'
+    });
+};
+
+closeSidebarBtn.onclick = () => {
+    anime({
+        targets: playlistSidebar,
+        translateX: [0, '-100%'],
+        opacity: [1, 0],
+        duration: 300,
+        easing: 'easeInOutQuad',
+        complete: () => playlistSidebar.classList.add('hidden')
+    });
+};
+
+// ────────────────────────────────────────────────
+// STUDY TIMER LOGIC
+// ────────────────────────────────────────────────
+function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+}
+
+startTimerBtn.onclick = () => {
+    if (timerInterval) return;
+    const input = timerInput.value.trim();
+    if (!input) return alert('Enter time in HH:MM:SS');
+    const [h, m, s] = input.split(':').map(Number);
+    if (isNaN(h) || isNaN(m) || isNaN(s) || h > 24 || m > 59 || s > 59) return alert('Invalid time (max 24:00:00)');
+    remainingTime = h * 3600 + m * 60 + s;
+    timerDisplay.textContent = formatTime(remainingTime);
+    timerInterval = setInterval(() => {
+        if (remainingTime <= 0) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            alert('Study time up!');
+            return;
+        }
+        remainingTime--;
+        timerDisplay.textContent = formatTime(remainingTime);
+    }, 1000);
+    anime({ targets: '#timerDisplay', scale: [1, 1.1, 1], duration: 500 });
+};
+
+pauseTimerBtn.onclick = () => {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+};
+
+resetTimerBtn.onclick = () => {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    remainingTime = 0;
+    timerDisplay.textContent = '00:00:00';
+    timerInput.value = '';
+};
+
+// ────────────────────────────────────────────────
+// INIT CHANNEL SELECTOR
+// ────────────────────────────────────────────────
+function initChannelSelector() {
+    CHANNEL_IDS.forEach(id => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = `Channel ${id.slice(0,8)}…`;
+        channelSelector.appendChild(opt);
+    });
+}
+
+// ────────────────────────────────────────────────
+// FETCH CHANNEL
+// ────────────────────────────────────────────────
+async function fetchChannelDetails(channelId) {
+    try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&id=${channelId}&key=${API_KEY}`);
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+        if (!data.items?.length) return;
+        uploadsPlaylistId = data.items[0].contentDetails.relatedPlaylists.uploads;
+        const name = data.items[0].snippet.title;
+        channelSelector.querySelector(`option[value="${channelId}"]`).textContent = name;
+    } catch(e) { handleApiError(e); }
+}
+
+// ────────────────────────────────────────────────
+// FETCH PLAYLISTS
+// ────────────────────────────────────────────────
+async function fetchPlaylists(channelId) {
+    try {
+        const res = await fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&channelId=${channelId}&maxResults=50&key=${API_KEY}`);
+        if (!res.ok) throw new Error(res.status);
+        const { items } = await res.json();
+        displayPlaylists(items);
+    } catch(e) { handleApiError(e); }
+}
+
+function displayPlaylists(playlists) {
+    playlistList.innerHTML = '';
+    playlists.forEach(pl => {
+        const btn = document.createElement('button');
+        btn.textContent = pl.snippet.title;
+        btn.className = 'w-full text-left p-3 rounded-lg hover:bg-secondary transition';
+        btn.onclick = () => loadPlaylistVideos(pl.id, pl.snippet.title);
+        playlistList.appendChild(btn);
+        anime({ targets: btn, opacity: [0,1], translateY: [20,0], delay: anime.stagger(100) });
+    });
+}
+
+// ────────────────────────────────────────────────
+// LOAD VIDEOS
+// ────────────────────────────────────────────────
+async function loadVideos(playlistId, pageToken = '', append = false) {
+    loadMoreBtn.disabled = true;
+    loadMoreBtn.textContent = 'Loading…';
+
+    try {
+        const url = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=${VIDEOS_PER_PAGE}&pageToken=${pageToken}&key=${API_KEY}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(res.status);
+        const data = await res.json();
+
+        const items = data.items.filter(i => i.snippet?.resourceId?.kind === 'youtube#video');
+
+        if (!append) {
+            videos = [];
+            videoGrid.innerHTML = '';
+        }
+        videos.push(...items);
+        displayVideos(items, append);
+
+        nextPageToken = data.nextPageToken || '';
+        loadMoreBtn.classList.toggle('hidden', !nextPageToken);
+    } catch(e) {
+        handleApiError(e);
+    } finally {
+        loadMoreBtn.disabled = false;
+        loadMoreBtn.textContent = 'Load More';
+    }
+}
+
+// ────────────────────────────────────────────────
+// DISPLAY VIDEOS
+// ────────────────────────────────────────────────
+function displayVideos(items, append = false) {
+    if (!append) videoGrid.innerHTML = '';
+
+    items.forEach(item => {
+        const v = item.snippet;
+        if (!v?.resourceId?.videoId) return;
+        const videoId = v.resourceId.videoId;
+
+        const card = document.createElement('div');
+        card.className = 'video-card glass-card p-4 rounded-2xl cursor-pointer hover:shadow-xl relative transition-all duration-300 hover:-translate-y-1';
+
+        card.innerHTML = `
+            <img src="${v.thumbnails?.medium?.url || 'https://via.placeholder.com/320x180?text=No+Thumb'}" 
+                 class="w-full rounded-lg mb-3 aspect-video object-cover" alt="${v.title}">
+            <h3 class="font-semibold leading-tight mb-1 line-clamp-2">${v.title}</h3>
+            <p class="text-sm text-gray-600 mb-2">${v.channelTitle}</p>
+            <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" 
+               class="text-primary hover:text-hover-accent text-sm">Watch on YouTube →</a>
+            <button class="favorite-btn absolute top-3 right-3 text-2xl transition-transform hover:scale-125 active:scale-90"
+                    title="${favorites.includes(videoId) ? 'Remove favorite' : 'Add to favorites'}">
+                ${favorites.includes(videoId) ? '❤️' : '♡'}
+            </button>
+        `;
+
+        card.addEventListener('click', e => {
+            if (e.target.closest('.favorite-btn')) return;
+            openVideoModal(videoId, v.title, v.channelTitle);
+        });
+
+        const favBtn = card.querySelector('.favorite-btn');
+        favBtn.onclick = e => {
+            e.stopPropagation();
+            if (favorites.includes(videoId)) {
+                favorites = favorites.filter(id => id !== videoId);
+                favBtn.textContent = '♡';
+                favBtn.title = 'Add to favorites';
+            } else {
+                favorites.push(videoId);
+                favBtn.textContent = '❤️';
+                favBtn.title = 'Remove from favorites';
+            }
+            localStorage.setItem('studyhub-favorites-2025', JSON.stringify(favorites));
+            updateFavoritesHeader();
+        };
+
+        videoGrid.appendChild(card);
+
+        anime({ targets: card, opacity: [0,1], translateY: [30,0], scale: [0.95,1], duration: 600, delay: anime.stagger(80), easing: 'easeOutQuad' });
+    });
+}
+
+// ────────────────────────────────────────────────
+// FAVORITES HEADER
+// ────────────────────────────────────────────────
+function updateFavoritesHeader() {
+    let favBtn = document.getElementById('btn-favorites');
+    if (!favBtn) {
+        favBtn = document.createElement('button');
+        favBtn.id = 'btn-favorites';
+        favBtn.className = 'bg-secondary text-text-dark px-4 md:px-5 py-2 rounded-lg hover:bg-hover-accent flex items-center';
+        document.getElementById('headerControls').appendChild(favBtn);
+    }
+    favBtn.innerHTML = `Favorites <span class="fav-count">${favorites.length}</span>`;
+
+    favBtn.onclick = () => {
+        if (favorites.length === 0) return alert("No favorites yet.");
+        const favItems = videos.filter(v => favorites.includes(v.snippet.resourceId.videoId));
+        displayVideos(favItems);
+    };
+
+    let clearBtn = document.getElementById('btn-clear-fav');
+    if (!clearBtn && favorites.length > 0) {
+        clearBtn = document.createElement('button');
+        clearBtn.id = 'btn-clear-fav';
+        clearBtn.textContent = 'Clear';
+        clearBtn.className = 'bg-red-100 text-red-700 px-3 py-1 rounded text-sm ml-2 hover:bg-red-200';
+        clearBtn.onclick = () => {
+            if (!confirm('Remove all favorites?')) return;
+            favorites = [];
+            localStorage.removeItem('studyhub-favorites-2025');
+            updateFavoritesHeader();
+            if (videoGrid.children.length > 0) displayVideos([]);
+        };
+        favBtn.after(clearBtn);
+    } else if (clearBtn && favorites.length === 0) {
+        clearBtn.remove();
+    }
+}
+
+// ────────────────────────────────────────────────
+// MODAL & EMBED
+// ────────────────────────────────────────────────
+function openVideoModal(id, title, channel) {
+    modalTitle.textContent = title;
+    modalChannel.textContent = channel;
+    watchOnYT.href = `https://www.youtube.com/watch?v=${id}`;
+    updateEmbed(id);
+    videoModal.classList.remove('hidden');
+    anime({
+        targets: '#videoModal > div',
+        scale: [0.8, 1],
+        opacity: [0, 1],
+        rotate: [5, 0],
+        duration: 400,
+        easing: 'easeOutBack'
+    });
+}
+
+function updateEmbed(videoId) {
+    let src = `https://www.youtube.com/embed/${videoId}?rel=0`;
+    if (isPlaylistEmbed && currentPlaylistId) {
+        src = `https://www.youtube.com/embed/videoseries?list=${currentPlaylistId}`;
+        togglePlaylistEmbed.textContent = 'Switch to Single Video';
+    } else {
+        togglePlaylistEmbed.textContent = 'Switch to Playlist';
+    }
+    videoPlayer.src = src;
+}
+
+// ────────────────────────────────────────────────
+// EVENT HANDLERS
+// ────────────────────────────────────────────────
+loadChannelBtn.onclick = async () => {
+    currentChannelId = channelSelector.value;
+    if (!currentChannelId) return alert('Please select a channel');
+    await fetchChannelDetails(currentChannelId);
+    await fetchPlaylists(currentChannelId);
+    playlistSidebar.classList.remove('hidden');
+    searchSortControls.classList.remove('hidden');
+    loadVideos(uploadsPlaylistId);
+    currentPlaylistId = '';
+    anime({ targets: '#playlistSidebar', opacity: [0,1], translateX: [-50,0], easing: 'easeOutQuad' });
+};
+
+loadAllVideosBtn.onclick = () => {
+    currentPlaylistId = '';
+    loadVideos(uploadsPlaylistId);
+};
+
+function loadPlaylistVideos(id, title) {
+    currentPlaylistId = id;
+    loadVideos(id);
+    togglePlaylistEmbed.classList.remove('hidden');
+}
+
+loadMoreBtn.onclick = () => {
+    const pid = currentPlaylistId || uploadsPlaylistId;
+    if (pid && nextPageToken) loadVideos(pid, nextPageToken, true);
+};
+
+closeModal.onclick = () => {
+    anime({
+        targets: '#videoModal > div',
+        scale: [1, 0.8],
+        opacity: [1, 0],
+        duration: 300,
+        easing: 'easeInBack',
+        complete: () => {
+            videoModal.classList.add('hidden');
+            videoPlayer.src = '';
+        }
+    });
+};
+
+togglePlaylistEmbed.onclick = () => {
+    isPlaylistEmbed = !isPlaylistEmbed;
+    const currentId = videoPlayer.src.match(/\/embed\/([^?]+)/)?.[1];
+    if (currentId) updateEmbed(currentId);
+};
+
+videoSearch.oninput = () => {
+    const q = videoSearch.value.toLowerCase().trim();
+    const filtered = q ? videos.filter(v => v.snippet.title.toLowerCase().includes(q)) : videos;
+    displayVideos(filtered);
+};
+
+sortSelector.onchange = () => {
+    let sorted = [...videos];
+    if (sortSelector.value === 'title') {
+        sorted.sort((a,b) => a.snippet.title.localeCompare(b.snippet.title));
+    } else {
+        sorted.sort((a,b) => new Date(b.snippet.publishedAt) - new Date(a.snippet.publishedAt));
+    }
+    displayVideos(sorted);
+};
+
+function handleApiError(err) {
+    console.error(err);
+    alert('Error loading content. Check API key / quota.');
+}
+
+// ────────────────────────────────────────────────
+// BACKGROUND ANIMATION
+// ────────────────────────────────────────────────
+function initCanvasBackground() {
+    const c = document.createElement('canvas');
+    c.id = 'backgroundCanvas';
+    document.body.appendChild(c);
+    const ctx = c.getContext('2d');
+    c.width = window.innerWidth;
+    c.height = window.innerHeight;
+
+    const particles = Array.from({length: 60}, () => ({
+        x: Math.random()*c.width, y: Math.random()*c.height,
+        r: Math.random()*2 + 0.8, s: Math.random()*0.4 + 0.1
+    }));
+
+    function draw() {
+        ctx.clearRect(0,0,c.width,c.height);
+        particles.forEach(p => {
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+            ctx.fillStyle = '#FFB6C1'; ctx.fill();
+            p.y -= p.s; if (p.y < 0) p.y = c.height;
+            p.x += Math.sin(p.y / 50) * 0.2; // added subtle wave animation
+        });
+        requestAnimationFrame(draw);
+    }
+    draw();
+
+    window.addEventListener('resize', () => {
+        c.width = window.innerWidth; c.height = window.innerHeight;
+    });
+}
+
+// ────────────────────────────────────────────────
+// PAGE LOAD
+// ────────────────────────────────────────────────
+window.addEventListener('load', () => {
+    anime({
+        targets: 'header, main, footer',
+        opacity: [0,1], translateY: [40,0],
+        delay: anime.stagger(180), duration: 800, easing: 'easeOutQuad'
+    });
+    updateFavoritesHeader();
+});
+
+// Start
+initChannelSelector();
+initCanvasBackground();
+
+</script>
+</body>
+</html>
